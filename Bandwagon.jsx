@@ -25,6 +25,7 @@ const SPORTS = [
   { id: "MLS",    label: "MLS",                emoji: "⚽" },
   { id: "NCAAFB", label: "College Football",   emoji: "🏈" },
   { id: "NCAAMB", label: "College Basketball", emoji: "🏀" },
+  { id: "WC26",   label: "World Cup 2026",     emoji: "🏆" },
 ];
 
 const TEAMS = {
@@ -83,6 +84,12 @@ const TEAMS = {
     { id: "unc", name: "Tar Heels",   city: "UNC",      color: "#4B9CD3", accent: "#cccccc" },
     { id: "ku",  name: "Jayhawks",    city: "Kansas",   color: "#0051A5", accent: "#E8000D" },
     { id: "uk",  name: "Wildcats",    city: "Kentucky", color: "#0033A0", accent: "#cccccc" },
+  ],
+  WC26: [
+    { id: "134458", name: "USA",      city: "Host",   color: "#002868", accent: "#BF0A30" },
+    { id: "134443", name: "Mexico",   city: "Host",   color: "#006847", accent: "#CE1126" },
+    { id: "134433", name: "Canada",   city: "Host",   color: "#FF0000", accent: "#FFFFFF" },
+    { id: "134430", name: "Argentina",city: "Champ",  color: "#75AADB", accent: "#FCBF49" },
   ],
 };
 

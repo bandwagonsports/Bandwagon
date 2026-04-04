@@ -37,20 +37,32 @@ async function fetchGames(sport, teamId, season) {
 }
 
 async function callGemini(prompt) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 220, temperature: 0.7 },
-      }),
+  const models = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",       // fallback if 2.0 is throttled
+  ];
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 220, temperature: 0.7 },
+          }),
+        }
+      );
+      if (res.status === 429) continue;   // retry or fall to next model
+      if (!res.ok) throw new Error(`Gemini ${model} error: ${res.status}`);
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
     }
-  );
-  if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  }
+  throw new Error("All Gemini models rate-limited.");
 }
 
 export default async function handler(req, res) {
@@ -100,7 +112,7 @@ export default async function handler(req, res) {
       if (label && grade && take) hotTakes.push({ label, rating: grade, take });
     });
 
-    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "s-maxage=10800, stale-while-revalidate=3600");
     return res.status(200).json({
       whatYouMissed: checkedMissed || "No recent games found.",
       hotTakes:      hotTakes.length > 0 ? hotTakes : null,

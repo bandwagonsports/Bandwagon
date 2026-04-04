@@ -63,41 +63,30 @@ export default async function handler(req, res) {
     const games      = await fetchGames(sport, teamId, season || "2024");
     const rawSummary = JSON.stringify(games.slice(0, 3));
 
-    // Agent A — Scout
-    const scoutFacts = await callGemini(`
-You are a sports data analyst. Extract key facts from these recent ${sport} results for ${teamName || "the team"}.
-Data: ${rawSummary}
-Output ONLY a bullet list: final scores, win/loss record, standout performers, current streak. Under 100 words. No commentary.
-    `.trim());
+    // --- START OF NEW CONSOLIDATED LOGIC ---
+    const masterPrompt = `
+      You are a sports analyst and casual fan explainer. 
+      Context: Here are the 3 most recent games for ${teamName}: ${rawSummary}
 
-    // Agent B — Translator (sequential, not parallel — respects 15 RPM limit)
-    const translated = await callGemini(`
-You are a casual sports explainer for fans who skip games. Facts: ${scoutFacts}
-Write exactly 3 sections separated by |||:
-1) WHAT YOU MISSED: 2 sentences, past tense, like texting a friend.
-2) HOT TAKES: 5 grades, one per line, format exactly: LABEL: GRADE | sentence
-   Labels must be: OFFENSE, DEFENSE, COACHING, STAR PLAYER, OVERALL
-3) WATER COOLER: 2-3 bullet points starting with dash, conversational, no jargon.
-Only output the 3 sections divided by |||. No extra text.
-    `.trim());
+      Step 1: Extract the facts (scores, record, performers).
+      Step 2: Based on those facts, write exactly 3 sections separated by |||:
 
-    const parts = translated.split("|||").map(s => s.trim());
-    const rawMissed = parts[0] || "";
-    const rawTakes  = parts[1] || "";
-    const rawCooler = parts[2] || "";
+      1) WHAT YOU MISSED: 2 sentences, past tense, like texting a friend.
+      2) HOT TAKES: 5 lines exactly, one per line, format: LABEL: GRADE | sentence
+         Labels: OFFENSE, DEFENSE, COACHING, STAR PLAYER, OVERALL
+      3) WATER COOLER: 2-3 conversational bullet points starting with dash.
 
-    // Agent C — Fact Checker (What You Missed + Water Cooler only)
-    const checked = await callGemini(`
-You are a fact checker. Correct any hallucinated scores, names, or outcomes in these texts.
-Known facts: ${scoutFacts}
-Text A: ${rawMissed}
-Text B: ${rawCooler}
-Output ONLY corrected texts separated by |||. If already accurate, return unchanged. No commentary.
-    `.trim());
+      Fact-check yourself before responding. Output ONLY the 3 sections divided by |||.
+    `.trim();
 
-    const checkedParts  = checked.split("|||").map(s => s.trim());
-    const checkedMissed = checkedParts[0] || rawMissed;
-    const checkedCooler = checkedParts[1] || rawCooler;
+    const responseText = await callGemini(masterPrompt);
+    const parts = responseText.split("|||").map(s => s.trim());
+
+    // Assigning the single-shot response to your existing variables
+    const checkedMissed = parts[0] || "No recent summary available.";
+    const rawTakes     = parts[1] || "";
+    const checkedCooler = parts[2] || "Check back soon for more updates.";
+    // --- END OF NEW CONSOLIDATED LOGIC ---
 
     // Parse Hot Takes into structured array
     const hotTakes = [];

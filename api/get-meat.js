@@ -16,24 +16,10 @@ const HOSTS = {
   FIFA: "v3.football.api-sports.io",
 };
 
-async function fetchGames(sport, teamId, season) {
-  const host = HOSTS[sport];
-  const paths = {
-    NFL:  `/games?team=${teamId}&season=${season}&last=3`,
-    NBA:  `/games?team=${teamId}&season=${season}&last=3`,
-    MLB:  `/games?team=${teamId}&season=${season}&last=3`,
-    NHL:  `/games?team=${teamId}&season=${season}&last=3`,
-    FIFA: `/fixtures?team=${teamId}&season=${season}&last=3`,
-  };
-  const res = await fetch(`https://${host}${paths[sport]}`, {
-    headers: {
-      "x-apisports-key":  process.env.APISPORTS_KEY,
-      "x-apisports-host": host,
-    },
-  });
-  if (!res.ok) throw new Error(`API-Sports ${sport} error: ${res.status}`);
-  const data = await res.json();
-  return data.response || [];
+async function fetchGames(teamId) {
+  const r    = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventslast.php?id=${teamId}`);
+  const data = await r.json();
+  return data.results || [];
 }
 
 async function callGemini(prompt) {

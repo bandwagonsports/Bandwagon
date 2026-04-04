@@ -51,8 +51,8 @@ export default async function handler(req, res) {
   if (!process.env.APISPORTS_KEY)          return res.status(500).json({ error: "APISPORTS_KEY not set." });
 
   try {
-    const games      = await fetchGames(sport, teamId, season || "2024");
-    const rawSummary = JSON.stringify(games.slice(0, 3));
+const games      = await fetchGames(teamId);
+const rawSummary = JSON.stringify(games.slice(0, 3));
 
     // --- START OF NEW CONSOLIDATED LOGIC ---
     const masterPrompt = `

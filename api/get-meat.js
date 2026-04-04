@@ -8,14 +8,6 @@
  *                         Hot Takes are opinion — skip fact check (by design)
  */
 
-const HOSTS = {
-  NFL:  "v1.american-football.api-sports.io",
-  NBA:  "v2.nba.api-sports.io",
-  MLB:  "v1.baseball.api-sports.io",
-  NHL:  "v1.hockey.api-sports.io",
-  FIFA: "v3.football.api-sports.io",
-};
-
 async function fetchGames(teamId) {
   const r    = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventslast.php?id=${teamId}`);
   const data = await r.json();
@@ -46,7 +38,7 @@ async function callGemini(prompt) {
 
 export default async function handler(req, res) {
   const { teamId, teamName, sport, season } = req.query;
-  if (!teamId || !sport || !HOSTS[sport]) return res.status(400).json({ error: "Missing params." });
+  if (!teamId) return res.status(400).json({ error: "Missing teamId." });
   if (!process.env.GEMINI_API_KEY)         return res.status(500).json({ error: "GEMINI_API_KEY not set." });
   if (!process.env.APISPORTS_KEY)          return res.status(500).json({ error: "APISPORTS_KEY not set." });
 

@@ -36,17 +36,17 @@ async function fetchGames(sport, teamId, season) {
   return data.response || [];
 }
 
-async function callGemini(prompt) {
-  const models = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",       // fallback if 2.0 is throttled
-  ];
+const GEMINI_MODELS = [
+  { model: "gemini-2.0-flash",     api: "v1beta" },
+  { model: "gemini-1.5-flash-latest", api: "v1"  },  // v1 stable fallback
+];
 
-  for (const model of models) {
+async function callGemini(prompt) {
+  for (const { model, api } of GEMINI_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/${api}/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -56,7 +56,7 @@ async function callGemini(prompt) {
           }),
         }
       );
-      if (res.status === 429) continue;   // retry or fall to next model
+      if (res.status === 429) continue;
       if (!res.ok) throw new Error(`Gemini ${model} error: ${res.status}`);
       const data = await res.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";

@@ -37,16 +37,16 @@ async function fetchGames(sport, teamId, season) {
 }
 
 const GEMINI_MODELS = [
-  { model: "gemini-2.0-flash",     api: "v1beta" },
-  { model: "gemini-1.5-flash-latest", api: "v1"  },  // v1 stable fallback
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
 ];
 
 async function callGemini(prompt) {
-  for (const { model, api } of GEMINI_MODELS) {
+  for (const model of GEMINI_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/${api}/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

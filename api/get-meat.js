@@ -1,25 +1,129 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+/**
+ * api/get-meat.js — 3-agent sequential Gemini pipeline
+ * Cached 1 hour. All users share cached response per team.
+ *
+ * Agent A (Scout)       — extracts facts from raw API-Sports data
+ * Agent B (Translator)  — rewrites in casual fan tone, produces 3 outputs
+ * Agent C (Fact Checker)— validates What You Missed + Water Cooler only
+ *                         Hot Takes are opinion — skip fact check (by design)
+ */
+
+const HOSTS = {
+  NFL:  "v1.american-football.api-sports.io",
+  NBA:  "v2.nba.api-sports.io",
+  MLB:  "v1.baseball.api-sports.io",
+  NHL:  "v1.hockey.api-sports.io",
+  FIFA: "v3.football.api-sports.io",
+};
+
+async function fetchGames(sport, teamId, season) {
+  const host = HOSTS[sport];
+  const paths = {
+    NFL:  `/games?team=${teamId}&season=${season}&last=3`,
+    NBA:  `/games?team=${teamId}&season=${season}&last=3`,
+    MLB:  `/games?team=${teamId}&season=${season}&last=3`,
+    NHL:  `/games?team=${teamId}&season=${season}&last=3`,
+    FIFA: `/fixtures?team=${teamId}&season=${season}&last=3`,
+  };
+  const res = await fetch(`https://${host}${paths[sport]}`, {
+    headers: {
+      "x-apisports-key":  process.env.APISPORTS_KEY,
+      "x-apisports-host": host,
+    },
+  });
+  if (!res.ok) throw new Error(`API-Sports ${sport} error: ${res.status}`);
+  const data = await res.json();
+  return data.response || [];
+}
+
+async function callGemini(prompt) {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 220, temperature: 0.7 },
+      }),
+    }
+  );
+  if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+}
 
 export default async function handler(req, res) {
-  const { teamId } = req.query;
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const { teamId, teamName, sport, season } = req.query;
+  if (!teamId || !sport || !HOSTS[sport]) return res.status(400).json({ error: "Missing params." });
+  if (!process.env.GEMINI_API_KEY)         return res.status(500).json({ error: "GEMINI_API_KEY not set." });
+  if (!process.env.APISPORTS_KEY)          return res.status(500).json({ error: "APISPORTS_KEY not set." });
 
   try {
-    // 1. Fetch data from TheSportsDB (using their public dev key '123')
-    const sportsData = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventslast.php?id=${teamId}`);
-    const data = await sportsData.json();
+    const games      = await fetchGames(sport, teamId, season || "2024");
+    const rawSummary = JSON.stringify(games.slice(0, 3));
 
-    // 2. The "Professor Agent" Prompt
-    const prompt = `You are a sports educator for casual fans. 
-    Based on these scores: ${JSON.stringify(data.results)}, 
-    explain why the most recent game matters in 2 sentences. 
-    Focus on the "vibe" and one educational term (like 'Wild Card' or 'Clean Sheet'). 
-    If no data is found, give a fun fact about the team's history.`;
+    // Agent A — Scout
+    const scoutFacts = await callGemini(`
+You are a sports data analyst. Extract key facts from these recent ${sport} results for ${teamName || "the team"}.
+Data: ${rawSummary}
+Output ONLY a bullet list: final scores, win/loss record, standout performers, current streak. Under 100 words. No commentary.
+    `.trim());
 
-    const result = await model.generateContent(prompt);
-    res.status(200).json({ summary: result.response.text() });
-  } catch (error) {
-    res.status(500).json({ error: "Agent is sleeping. Try again later." });
+    // Agent B — Translator (sequential, not parallel — respects 15 RPM limit)
+    const translated = await callGemini(`
+You are a casual sports explainer for fans who skip games. Facts: ${scoutFacts}
+Write exactly 3 sections separated by |||:
+1) WHAT YOU MISSED: 2 sentences, past tense, like texting a friend.
+2) HOT TAKES: 5 grades, one per line, format exactly: LABEL: GRADE | sentence
+   Labels must be: OFFENSE, DEFENSE, COACHING, STAR PLAYER, OVERALL
+3) WATER COOLER: 2-3 bullet points starting with dash, conversational, no jargon.
+Only output the 3 sections divided by |||. No extra text.
+    `.trim());
+
+    const parts = translated.split("|||").map(s => s.trim());
+    const rawMissed = parts[0] || "";
+    const rawTakes  = parts[1] || "";
+    const rawCooler = parts[2] || "";
+
+    // Agent C — Fact Checker (What You Missed + Water Cooler only)
+    const checked = await callGemini(`
+You are a fact checker. Correct any hallucinated scores, names, or outcomes in these texts.
+Known facts: ${scoutFacts}
+Text A: ${rawMissed}
+Text B: ${rawCooler}
+Output ONLY corrected texts separated by |||. If already accurate, return unchanged. No commentary.
+    `.trim());
+
+    const checkedParts  = checked.split("|||").map(s => s.trim());
+    const checkedMissed = checkedParts[0] || rawMissed;
+    const checkedCooler = checkedParts[1] || rawCooler;
+
+    // Parse Hot Takes into structured array
+    const hotTakes = [];
+    rawTakes.split("\n").filter(l => l.includes("|")).forEach(line => {
+      const colonIdx = line.indexOf(":");
+      const pipeIdx  = line.indexOf("|");
+      if (colonIdx === -1 || pipeIdx === -1) return;
+      const label  = line.substring(0, colonIdx).trim().toUpperCase();
+      const grade  = line.substring(colonIdx + 1, pipeIdx).trim();
+      const take   = line.substring(pipeIdx + 1).trim();
+      if (label && grade && take) hotTakes.push({ label, rating: grade, take });
+    });
+
+    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600");
+    return res.status(200).json({
+      whatYouMissed: checkedMissed || "No recent games found.",
+      hotTakes:      hotTakes.length > 0 ? hotTakes : null,
+      waterCooler:   checkedCooler || "Check back after the next game.",
+    });
+
+  } catch (err) {
+    console.error("[get-meat]", err.message);
+    return res.status(200).json({
+      whatYouMissed: "The Professor is reviewing the tape. Check back in a moment.",
+      hotTakes:      null,
+      waterCooler:   "Agents are huddling. Refresh in a few seconds.",
+    });
   }
 }

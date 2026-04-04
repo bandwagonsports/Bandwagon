@@ -1,3 +1,4 @@
+import { Search, Award, Shield, Zap, ChevronRight, Layout, RefreshCw, Trophy, Users, BarChart3, Info } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 // ─── Worn All-Star Palette ────────────────────────────────────────────────
